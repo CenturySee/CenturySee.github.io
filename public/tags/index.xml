@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Tags on AK&#39;s Site</title>
+    <link>/tags/</link>
+    <description>Recent content in Tags on AK&#39;s Site</description>
+    <image>
+      <title>AK&#39;s Site</title>
+      <url>%3Clink%20or%20path%20of%20image%20for%20opengraph,%20twitter-cards%3E</url>
+      <link>%3Clink%20or%20path%20of%20image%20for%20opengraph,%20twitter-cards%3E</link>
+    </image>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh</language>
+    <lastBuildDate>Tue, 11 Apr 2023 15:00:00 +0800</lastBuildDate><atom:link href="/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Bloomberg</title>
+      <link>/tags/bloomberg/</link>
+      <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
+      
+      <guid>/tags/bloomberg/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>GPT</title>
+      <link>/tags/gpt/</link>
+      <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
+      
+      <guid>/tags/gpt/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>LLM</title>
+      <link>/tags/llm/</link>
+      <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
+      
+      <guid>/tags/llm/</guid>
+      <description></description>
+    </item>
+    
+  </channel>
+</rss>

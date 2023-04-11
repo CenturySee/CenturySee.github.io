@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>LLM on AK&#39;s Site</title>
+    <link>/tags/llm/</link>
+    <description>Recent content in LLM on AK&#39;s Site</description>
+    <image>
+      <title>AK&#39;s Site</title>
+      <url>%3Clink%20or%20path%20of%20image%20for%20opengraph,%20twitter-cards%3E</url>
+      <link>%3Clink%20or%20path%20of%20image%20for%20opengraph,%20twitter-cards%3E</link>
+    </image>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh</language>
+    <lastBuildDate>Tue, 11 Apr 2023 15:00:00 +0800</lastBuildDate><atom:link href="/tags/llm/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>BloombergGPT——评估、相关工作、意义与总结</title>
+      <link>/posts/bloomberggpt2/</link>
+      <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
+      
+      <guid>/posts/bloomberggpt2/</guid>
+      <description>前一篇文章，讲述了BloombergGPT的数据、模型与训练细节。具体可见： 这一篇总结下其余章节。 文章较长，可先查看要点后再查看感兴趣的章节</description>
+    </item>
+    
+    <item>
+      <title>BloombergGPT——数据、模型、训练细节</title>
+      <link>/posts/bloomberggpt1/</link>
+      <pubDate>Tue, 11 Apr 2023 10:09:18 +0800</pubDate>
+      
+      <guid>/posts/bloomberggpt1/</guid>
+      <description>BloombergGPT是布隆伯格2023年3月30日公开在arXiv的一篇文章——BloombergGPT: A Large Language Model for Finance中涉及</description>
+    </item>
+    
+  </channel>
+</rss>
