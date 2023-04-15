@@ -11,7 +11,25 @@
     </image>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh</language>
-    <lastBuildDate>Tue, 11 Apr 2023 15:00:00 +0800</lastBuildDate><atom:link href="/tags/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 15 Apr 2023 13:08:40 +0800</lastBuildDate><atom:link href="/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Claude</title>
+      <link>/tags/claude/</link>
+      <pubDate>Sat, 15 Apr 2023 13:08:40 +0800</pubDate>
+      
+      <guid>/tags/claude/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>LLM</title>
+      <link>/tags/llm/</link>
+      <pubDate>Sat, 15 Apr 2023 13:08:40 +0800</pubDate>
+      
+      <guid>/tags/llm/</guid>
+      <description></description>
+    </item>
+    
     <item>
       <title>Bloomberg</title>
       <link>/tags/bloomberg/</link>
@@ -27,15 +45,6 @@
       <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
       
       <guid>/tags/gpt/</guid>
-      <description></description>
-    </item>
-    
-    <item>
-      <title>LLM</title>
-      <link>/tags/llm/</link>
-      <pubDate>Tue, 11 Apr 2023 15:00:00 +0800</pubDate>
-      
-      <guid>/tags/llm/</guid>
       <description></description>
     </item>
     
