@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>龙虾 on 算法工程笔记</title><link>https://centurysee.github.io/tags/%E9%BE%99%E8%99%BE/</link><description>Recent content in 龙虾 on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.157.0</generator><language>zh-cn</language><lastBuildDate>Sat, 28 Feb 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/%E9%BE%99%E8%99%BE/index.xml" rel="self" type="application/rss+xml"/><item><title>一文拆透：龙虾 Agent 的 7 大核心子系统</title><link>https://centurysee.github.io/posts/20260228-%E9%BE%99%E8%99%BE-agent-%E6%9E%B6%E6%9E%84%E4%B8%8E%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97_gemini/</link><pubDate>Sat, 28 Feb 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260228-%E9%BE%99%E8%99%BE-agent-%E6%9E%B6%E6%9E%84%E4%B8%8E%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;上一篇文章，&lt;a href="https://mp.weixin.qq.com/s/Ffui6VFn768eyoNTp0_pJw"&gt;一个任务流，看懂爆火的“龙虾 Agent”到底怎么干活&lt;/a&gt;，通过一个典型任务简要地分析了龙虾 Agent的执行流程。&lt;/p&gt;
+&lt;p&gt;今天我们再深入一下，聊聊龙虾 Agent 的整体架构和 7 个核心子系统，帮大家建立一个清晰的全景认知。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="先看全局一条消息的完整旅程"&gt;先看全局：一条消息的完整旅程&lt;/h2&gt;
+&lt;p&gt;在拆解各个子系统之前，先用一张时序图看看，当用户发出一条消息后，系统内部到底发生了什么：&lt;/p&gt;
+&lt;p&gt;&lt;img alt="统一时序图.png" loading="lazy" src="https://image.imak.top/2026/02/7604b4c868ad78eeb1e4f7e65d4898ac.png"&gt;&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;sequenceDiagram
+participant U as 用户
+participant C as Channel
+participant G as Gateway
+participant A as Agent Runtime
+participant M as Model (LLM)
+participant T as Tools
+participant Mem as Memory
+U-&amp;gt;&amp;gt;C: 发送消息
+C-&amp;gt;&amp;gt;G: 统一格式消息
+G-&amp;gt;&amp;gt;G: 路由 &amp;amp; 会话匹配
+G-&amp;gt;&amp;gt;A: 触发Agent执行
+A-&amp;gt;&amp;gt;Mem: 检索相关记忆
+Mem--&amp;gt;&amp;gt;A: 返回记忆片段
+A-&amp;gt;&amp;gt;A: 构建System Prompt
+A-&amp;gt;&amp;gt;M: 调用LLM
+loop 工具调用循环
+M--&amp;gt;&amp;gt;A: 流式响应/工具调用
+alt 需要工具调用
+A-&amp;gt;&amp;gt;T: 执行工具
+T--&amp;gt;&amp;gt;A: 返回结果
+A-&amp;gt;&amp;gt;M: 继续推理
+else 纯文本响应
+A--&amp;gt;&amp;gt;G: 流式文本块
+end
+end
+G-&amp;gt;&amp;gt;C: 发送响应
+C-&amp;gt;&amp;gt;U: 投递消息
+A-&amp;gt;&amp;gt;Mem: 存储为新记忆
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;整个流程中最精髓的部分，就是中间那个循环——&lt;strong&gt;ReAct（Reason + Action）&lt;/strong&gt;。&lt;/p&gt;</description></item><item><title>躺在床上写代码？OpenClaw 让 Telegram 变成你的全栈 IDE</title><link>https://centurysee.github.io/posts/20260210_gemini/</link><pubDate>Tue, 10 Feb 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260210_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;还记得你上次被迫在假期打开电脑修 Bug 的痛苦吗？如果我告诉你，有人已经实现了“躺在床上，只用手机发发消息，就能完成全栈开发和发布”，这听起来是不是有点像科幻小说？&lt;/p&gt;
+&lt;p&gt;然而，就在前两天，&lt;code&gt;avante.nvim&lt;/code&gt; 的作者 &lt;strong&gt;yetone&lt;/strong&gt; 用实际行动证明了这不仅可行，而且效率惊人。他在休假期间，完全没有触碰电脑，仅通过 &lt;strong&gt;Telegram&lt;/strong&gt; 和一个名为 &lt;strong&gt;OpenClaw&lt;/strong&gt; 的 AI Agent，就完成了两个真实项目的迭代。&lt;/p&gt;
+&lt;p&gt;今天这篇，我们就来拆解一下这套“手机驱动全栈开发”背后的硬核逻辑。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="01-当-telegram-变成指挥中心"&gt;01 当 Telegram 变成指挥中心&lt;/h2&gt;
+&lt;p&gt;这套玩法的核心，在于将**“指令”&lt;strong&gt;与&lt;/strong&gt;“执行”**彻底分离。&lt;/p&gt;
+&lt;p&gt;简单来说，&lt;strong&gt;Telegram 是他的“嘴”，而 OpenClaw 是他的“手”&lt;/strong&gt;。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;指挥官（Telegram）&lt;/strong&gt;：作者巧妙地利用了 Telegram 的 &lt;strong&gt;Topic（话题）&lt;/strong&gt; 功能。每一个 Topic 就是一个独立的“项目空间”。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;em&gt;Topic A&lt;/em&gt; 负责 macOS 桌面应用 Alma。&lt;/li&gt;
+&lt;li&gt;&lt;em&gt;Topic B&lt;/em&gt; 负责 Web 服务 Confirmo。
+这样做的好处是天然隔离了上下文，互不干扰，就像你在 IDE 里开了不同的 Workspaces。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;执行者（OpenClaw）&lt;/strong&gt;：这是一个运行在服务器上的 AI Agent，但它远不止是一个聊天机器人。它拥有&lt;strong&gt;文件读写&lt;/strong&gt;、&lt;strong&gt;Shell 执行&lt;/strong&gt;甚至&lt;strong&gt;浏览器控制&lt;/strong&gt;的权限。它不仅能写代码，还能编译、测试、部署。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="02-真正闭环的工作流"&gt;02 真正闭环的工作流&lt;/h2&gt;
+&lt;p&gt;如果只是让 AI 写代码，那你还得自己复制粘贴、自己跑测试。OpenClaw 的强大之处在于它实现了 &lt;strong&gt;ChatOps&lt;/strong&gt; 的完全闭环。&lt;/p&gt;
+&lt;h3 id="1-需求下达-coding"&gt;1. 需求下达 (Coding)&lt;/h3&gt;
+&lt;p&gt;你只需要在群里发一句人话：“给 Confirmo 加个 Telegram 通知功能。”&lt;/p&gt;
+&lt;h3 id="2-自主编码与逻辑验证-logic-verification"&gt;2. 自主编码与逻辑验证 (Logic Verification)&lt;/h3&gt;
+&lt;p&gt;OpenClaw 接收指令后，自动分析代码库并进行修改。&lt;/p&gt;</description></item></channel></rss>

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>AI on 算法工程笔记</title><link>https://centurysee.github.io/tags/ai/</link><description>Recent content in AI on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.157.0</generator><language>zh-cn</language><lastBuildDate>Mon, 02 Mar 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/ai/index.xml" rel="self" type="application/rss+xml"/><item><title>一个任务流，看懂AI Agent到底怎么干活</title><link>https://centurysee.github.io/posts/20260228-%E9%BE%99%E8%99%BE%E5%85%B8%E5%9E%8B%E4%BB%BB%E5%8A%A1%E6%B5%81%E7%A8%8B_gemini/</link><pubDate>Mon, 02 Mar 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260228-%E9%BE%99%E8%99%BE%E5%85%B8%E5%9E%8B%E4%BB%BB%E5%8A%A1%E6%B5%81%E7%A8%8B_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;周五了，聊点轻松的。最近有个开源项目叫&lt;strong&gt;龙虾&lt;/strong&gt;（OpenClaw），在圈子里挺火。简单说，它就是一个&lt;strong&gt;跑在你自己电脑上的AI管家&lt;/strong&gt;——你在聊天窗口说句话，它就能自动帮你操作文件、调API、搞定一系列复杂任务。&lt;/p&gt;
+&lt;p&gt;今天这篇不搞概念轰炸，&lt;strong&gt;就用一个&amp;quot;每天早9点自动生成工作日报&amp;quot;的真实任务，完整拆解一遍，看看一个Agent系统从接收指令到完成交付，中间到底经历了什么。&lt;/strong&gt;&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="龙虾是什么一句话说清楚"&gt;龙虾是什么？一句话说清楚&lt;/h2&gt;
+&lt;p&gt;龙虾是&lt;strong&gt;一个开源的、可本地部署的个人AI助理平台&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;它的交互入口是你熟悉的聊天软件——Telegram、飞书、钉钉都能接。但它和普通聊天机器人的本质区别在于：&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;它不只是回答问题，它能自己动手干活。&lt;/strong&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;操作本地文件、调用外部API、管理定时任务……这些以前需要你手动完成或者写脚本才能搞定的事，现在一句话就能启动。&lt;/p&gt;
+&lt;p&gt;你可以把它部署在Mac、Windows甚至NAS上，接入Claude、GPT等不同的大模型来驱动。&lt;/p&gt;
+&lt;h2 id="为什么火因为它真的能跑通"&gt;为什么火？因为它真的能&amp;quot;跑通&amp;quot;&lt;/h2&gt;
+&lt;p&gt;开源Agent项目那么多，为什么偏偏龙虾火了？&lt;/p&gt;
+&lt;p&gt;个人看法：&lt;strong&gt;不是因为它多完美，而是因为它提供了一整套&amp;quot;让大模型干活&amp;quot;的基础设施，并且真的跑通了。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;之前很多Agent项目，要么停留在demo阶段，要么只能完成单一任务。龙虾的价值在于，它把&lt;strong&gt;任务调度、工具调用、多Agent协作、会话管理&lt;/strong&gt;这些零散的能力，整合成了一个可以实际运行的系统。&lt;/p&gt;
+&lt;p&gt;好，概念不多说。&lt;strong&gt;直接看它怎么干活的。&lt;/strong&gt;&lt;/p&gt;
+&lt;h2 id="阶段一用户下达指令"&gt;阶段一：用户下达指令&lt;/h2&gt;
+&lt;p&gt;你在Telegram对话框里敲了一句：&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;帮我每天早9点自动生成前一天的工作日报&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;然后，系统内部发生了这些事：&lt;/p&gt;
+&lt;p&gt;&lt;img alt="阶段1.png" loading="lazy" src="https://image.imak.top/2026/02/1ebaad342f68d86dc6d0718b2d6899b8.png"&gt;&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart TB
+subgraph Phase1[&amp;#34;阶段一：用户设置定时任务&amp;#34;]
+U[&amp;#34;👤 用户&amp;lt;br&amp;gt;(Telegram)&amp;#34;] --&amp;gt;|&amp;#34;帮我每天早9点生成日报&amp;#34;| TG[&amp;#34;Telegram Channel&amp;#34;]
+TG --&amp;gt; GW1[&amp;#34;Gateway&amp;#34;] --&amp;gt; MA[&amp;#34;Main Agent&amp;#34;]
+MA --&amp;gt;|&amp;#34;cron 工具 action=add&amp;lt;br&amp;gt;schedule: &amp;#39;0 9 * * *&amp;#39;&amp;lt;br&amp;gt;payload: agentTurn&amp;lt;br&amp;gt;sessionTarget: isolated&amp;#34;| CRON[&amp;#34;Cron Scheduler&amp;#34;]
+end
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;这里面有几个关键角色：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Channel（通道）&lt;/strong&gt;：你和龙虾说话的地方。Telegram只是其中一个选项，飞书、钉钉都能换。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Gateway（网关）&lt;/strong&gt;：整个系统的&lt;strong&gt;中央控制器&lt;/strong&gt;。不管你用什么聊天软件，消息到了网关这一层，格式就统一了。它同时管着会话、配置、安全等一堆事。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Main Agent（主智能体）&lt;/strong&gt;：真正干活的大脑。它理解了你的意图后，调用了&lt;strong&gt;Cron工具&lt;/strong&gt;，设置了一个定时任务。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Cron Scheduler&lt;/strong&gt;：定时调度器，就是个闹钟——到点了就触发。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;一句话：你说了一句话 → 系统理解了意图 → 设了个定时闹钟。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;到这里，你的操作就结束了。剩下的，龙虾自己来。&lt;/p&gt;
+&lt;h2 id="阶段二闹钟响了开始干活"&gt;阶段二：闹钟响了，开始干活&lt;/h2&gt;
+&lt;p&gt;第二天早上9点，Cron准时触发。接下来是最精彩的部分——&lt;strong&gt;多Agent协作&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;&lt;img alt="阶段234.png" loading="lazy" src="https://image.imak.top/2026/02/767a1bf9f96f42db02fea4ca9725a157.png"&gt;&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart TB
+subgraph Phase2[&amp;#34;阶段二：每天早9点Cron触发&amp;#34;]
+TICK[&amp;#34;⏰ 09:00 触发&amp;#34;] --&amp;gt; GW2[&amp;#34;Gateway&amp;lt;br&amp;gt;创建 Isolated Session&amp;#34;]
+GW2 --&amp;gt; ORCH[&amp;#34;协调 Agent&amp;#34;]
+ORCH --&amp;gt;|任务拆解| PLAN[&amp;#34;规划3个子任务&amp;#34;]
+end
+subgraph Phase3[&amp;#34;阶段三：3个SubAgent并行执行&amp;#34;]
+PLAN --&amp;gt;|sessions_spawn| SA[&amp;#34;SubAgent A&amp;lt;br&amp;gt;获取日历事件&amp;lt;br&amp;gt;🔧 bash → 日历API&amp;#34;]
+PLAN --&amp;gt;|sessions_spawn| SB[&amp;#34;SubAgent B&amp;lt;br&amp;gt;检查GitHub通知&amp;lt;br&amp;gt;🔧 web_fetch → GitHub&amp;#34;]
+PLAN --&amp;gt;|sessions_spawn| SC[&amp;#34;SubAgent C&amp;lt;br&amp;gt;总结昨日对话&amp;lt;br&amp;gt;🔧 sessions_history + memory&amp;#34;]
+end
+subgraph Phase4[&amp;#34;阶段四：汇总投递&amp;#34;]
+SA &amp;amp; SB &amp;amp; SC --&amp;gt;|结果返回| REG[&amp;#34;SubAgent Registry&amp;lt;br&amp;gt;跟踪完成状态&amp;#34;]
+REG --&amp;gt; ORCH2[&amp;#34;协调Agent&amp;lt;br&amp;gt;整合日报&amp;#34;]
+ORCH2 --&amp;gt; ANN[&amp;#34;Announce System&amp;lt;br&amp;gt;投递到 Telegram&amp;#34;]
+ANN --&amp;gt; RECV[&amp;#34;👤 用户收到日报 ✅&amp;#34;]
+end
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;来，拆解一下每一步到底发生了什么：&lt;/p&gt;</description></item><item><title>Agent进化论：从Tools到Skills，Claude在下什么棋？</title><link>https://centurysee.github.io/posts/20260123_gemini/</link><pubDate>Fri, 23 Jan 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260123_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;最近 Claude 推出的 Skills 功能刷屏了技术圈。很多朋友问我：这玩意儿不就是 Tool Use 吗？换个马甲我就不认识了？&lt;/p&gt;
+&lt;p&gt;其实不然。如果说 Tools 是 Agent 的&amp;quot;手&amp;quot;，那么 Skills 更像是让 Agent 拥有了**&amp;ldquo;外挂大脑&amp;rdquo;**。今天这篇主要聊聊，为什么 Skills 是 Agent 走向复杂工程化的关键一步。&lt;/p&gt;
+&lt;h2 id="1-什么是-skills"&gt;1. 什么是 Skills？&lt;/h2&gt;
+&lt;p&gt;简单来说，Skills 是一种&lt;strong&gt;可动态加载&lt;/strong&gt;的&amp;quot;能力插件&amp;quot;或&amp;quot;知识包&amp;quot;。&lt;/p&gt;
+&lt;p&gt;形式上，它就是一个文件夹，里面整整齐齐地放着：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;指令 (Instructions)&lt;/strong&gt;: 比如 &lt;code&gt;SKILL.md&lt;/code&gt;，写满了私有化的 SOP（标准作业程序）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;脚本 (Scripts)&lt;/strong&gt;: Python 脚本等，用来执行确定性的操作。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;资源 (Resources)&lt;/strong&gt;: 其他辅助文件。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Agent 就像一个&amp;quot;乐高小人&amp;quot;，需要什么能力，就&amp;quot;咔嚓&amp;quot;一声把对应的 Skills 模块插上去。&lt;/p&gt;
+&lt;h2 id="2-为什么我们需要-skills"&gt;2. 为什么我们需要 Skills？&lt;/h2&gt;
+&lt;p&gt;在 Agent 开发中，我们苦&amp;quot;Context 爆炸&amp;quot;久矣。Skills 的出现，主要是为了解决从 Demo 到 Production 的两个核心痛点。&lt;/p&gt;
+&lt;h3 id="1-渐进式披露给大脑减负"&gt;1. 渐进式披露：给大脑&amp;quot;减负&amp;quot;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;没有 Skills 前&lt;/strong&gt;（单体应用模式）：
+我们需要把所有的业务逻辑、具体的 Prompt、几十个 Tool 的定义，全部一股脑塞进 System Prompt 里。这就好比让一个员工在入职第一天，就把公司几百页的规章制度倒背如流。结果就是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;贵&lt;/strong&gt;：Token 消耗巨大。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;笨&lt;/strong&gt;：上下文太长，模型注意力分散，极易产生幻觉。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;有了 Skills 后&lt;/strong&gt;（微服务模式）：
+Agent 采用了 &lt;strong&gt;&amp;ldquo;渐进式披露&amp;rdquo; (Progressive Disclosure)&lt;/strong&gt; 的策略。&lt;/p&gt;</description></item><item><title>Anthropic 工程博客：Agent 开发者的生产环境生存指南（下）</title><link>https://centurysee.github.io/posts/20260108_anthropic-%E5%B7%A5%E7%A8%8B%E5%8D%9A%E5%AE%A2agent-%E5%BC%80%E5%8F%91%E8%80%85%E7%9A%84%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83%E7%94%9F%E5%AD%98%E6%8C%87%E5%8D%97%E4%B8%8B_gemini/</link><pubDate>Fri, 09 Jan 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260108_anthropic-%E5%B7%A5%E7%A8%8B%E5%8D%9A%E5%AE%A2agent-%E5%BC%80%E5%8F%91%E8%80%85%E7%9A%84%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83%E7%94%9F%E5%AD%98%E6%8C%87%E5%8D%97%E4%B8%8B_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;在上一篇中，我们探讨了 Agent 的核心模式、Think Tool 以及多 Agent 协作架构。今天这&lt;strong&gt;下篇&lt;/strong&gt;，我们将深入到更底层的工程基建，聊聊 &lt;strong&gt;SDK、上下文工程、MCP&lt;/strong&gt; 以及如何构建长期运行的 Agent 系统。&lt;/p&gt;
+&lt;p&gt;书接上回，让我们继续 Agent 的进阶之旅。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="7-building-agents-with-the-claude-agent-sdk"&gt;7. &lt;a href="https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk"&gt;Building agents with the Claude Agent SDK&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;“给 Agent 装上‘手’和‘脚’。”&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;这是一篇工程实操指南。Claude Agent SDK 赋予了 Agent 操作文件系统、终端的能力，并支持 &lt;strong&gt;Agentic search&lt;/strong&gt; 和 &lt;strong&gt;Subagents&lt;/strong&gt;。它是构建通用、多步骤工作流的基石，解决了“虽然脑子好使，但是手够不着”的工程难题。&lt;/p&gt;
+&lt;h2 id="8-effective-context-engineering-for-ai-agents"&gt;8. &lt;a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"&gt;Effective context engineering for AI agents&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;“注意力是稀缺资源，请省着点用。”&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;随着上下文窗口越来越大，大家都变得“大手大脚”。但这篇文章提出了 &lt;strong&gt;Context Engineering&lt;/strong&gt; 的概念：通过精选示例、Just-in-time 检索和结构化笔记，把有限的注意力预算用在刀刃上，确保长任务中 Agent 不会“走神”。&lt;/p&gt;
+&lt;h2 id="9-equipping-agents-for-the-real-world-with-agent-skills"&gt;9. &lt;a href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills"&gt;Equipping agents for the real world with Agent Skills&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;“渐进式加载，让通用模型变身领域专家。”&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;通用模型缺乏领域知识，但全塞进 Prompt 又太贵太慢。&lt;strong&gt;Agent Skills&lt;/strong&gt; 机制通过标准化的 &lt;code&gt;SKILL.md&lt;/code&gt; 和代码组织，利用 &lt;strong&gt;Progressive Disclosure&lt;/strong&gt;（渐进式披露）原则，按需加载专业能力。&lt;/p&gt;
+&lt;h2 id="10-making-claude-code-more-secure-and-autonomous-with-sandboxing"&gt;10. &lt;a href="https://www.anthropic.com/engineering/claude-code-sandboxing"&gt;Making Claude Code more secure and autonomous with sandboxing&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;“安全感不是靠每一次弹窗换来的。”&lt;/p&gt;</description></item><item><title>Anthropic 工程博客：Agent 开发者的生产环境生存指南（上）</title><link>https://centurysee.github.io/posts/20260108_anthropic-%E5%B7%A5%E7%A8%8B%E5%8D%9A%E5%AE%A2agent-%E5%BC%80%E5%8F%91%E8%80%85%E7%9A%84%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83%E7%94%9F%E5%AD%98%E6%8C%87%E5%8D%97%E4%B8%8A_gemini/</link><pubDate>Thu, 08 Jan 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260108_anthropic-%E5%B7%A5%E7%A8%8B%E5%8D%9A%E5%AE%A2agent-%E5%BC%80%E5%8F%91%E8%80%85%E7%9A%84%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83%E7%94%9F%E5%AD%98%E6%8C%87%E5%8D%97%E4%B8%8A_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;最近 Agent 开发圈子里最火的资料，莫过于 Claude Code 的 Skills。
+而在这背后，隐藏着一个关于Agent开发更大的宝藏库——Anthropic engineering 系列博客。
+这个系列博客仅仅是技术文档，更是一线工程师在生产环境中&amp;quot;踩坑&amp;quot;后总结出来的&lt;strong&gt;生存指南&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;由于干货实在太多，我们将其拆分为（上）（下）两篇。今天这&lt;strong&gt;上篇&lt;/strong&gt;，主要聚焦于 &lt;strong&gt;Agent 的核心模式与工具链&lt;/strong&gt;。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id="1-contextual-retrieval-in-ai-systems"&gt;1. &lt;a href="https://www.anthropic.com/engineering/contextual-retrieval"&gt;Contextual Retrieval in AI Systems&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;让每一个切片都能&amp;rsquo;自报家门&amp;rsquo;。&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;传统 RAG 系统最大的痛点是切分（Chunking）导致的&lt;strong&gt;上下文丢失&lt;/strong&gt;。一段代码或一句话一旦脱离了前文，从语义上就变得&amp;quot;面目全非&amp;quot;，导致检索失败。&lt;/p&gt;
+&lt;p&gt;Anthropic 的解法非常直观：&lt;strong&gt;Contextual Retrieval&lt;/strong&gt;。简单来说，就是在做 Embedding 和索引之前，先让模型给每个切片加一段&amp;quot;背景介绍&amp;quot;。配合 &lt;strong&gt;Contextual BM25&lt;/strong&gt;，这套组合拳精准解决了&amp;quot;切得太碎找不到&amp;quot;的问题。&lt;/p&gt;
+&lt;h2 id="2-building-effective-ai-agents"&gt;2. &lt;a href="https://www.anthropic.com/engineering/building-effective-agents"&gt;Building Effective AI Agents&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;不要为了炫技而强行 Agent，有时候一个工作流就够了。&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;这篇文章总结了构建 Agent 的核心模式。从简单的增强型 LLM，到 Prompt Chaining、Routing，再到复杂的 Orchestrator-workers 和 Evaluator-optimizer。&lt;/p&gt;
+&lt;p&gt;它的核心观点非常务实：&lt;strong&gt;控制力与灵活性的平衡&lt;/strong&gt;。不要一上来就搞全自动 Agent，根据任务复杂度选择最简单的有效模式，才是工程落地的正道。&lt;/p&gt;
+&lt;h2 id="3-the"&gt;3. &lt;a href="https://www.anthropic.com/engineering/claude-think-tool"&gt;The &amp;ldquo;think&amp;rdquo; tool: Enabling Claude to stop and think&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;赋予模型&amp;rsquo;三思而后行&amp;rsquo;的权利。&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;在处理复杂策略或多步推理时，模型往往容易&amp;quot;嘴比脑子快&amp;quot;，导致决策错误。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;think tool&lt;/strong&gt; 就是让 Claude 在行动之前，先输出一段结构化的思考过程。这不仅降低了错误率，更重要的是给了模型一个&amp;quot;打草稿&amp;quot;的空间，让决策逻辑更加连贯和可追溯。&lt;/p&gt;
+&lt;h2 id="4-claude-code-best-practices"&gt;4. &lt;a href="https://www.anthropic.com/engineering/claude-code-best-practices"&gt;Claude Code Best Practices&lt;/a&gt;&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;像带实习生一样带 Agent。&amp;rdquo;&lt;/p&gt;</description></item></channel></rss>

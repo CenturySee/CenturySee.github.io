@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Skills on 算法工程笔记</title><link>https://centurysee.github.io/tags/skills/</link><description>Recent content in Skills on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.157.0</generator><language>zh-cn</language><lastBuildDate>Fri, 23 Jan 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/skills/index.xml" rel="self" type="application/rss+xml"/><item><title>Agent进化论：从Tools到Skills，Claude在下什么棋？</title><link>https://centurysee.github.io/posts/20260123_gemini/</link><pubDate>Fri, 23 Jan 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/20260123_gemini/</guid><description>&lt;p&gt;大家好，我是算法工程笔记。&lt;/p&gt;
+&lt;p&gt;最近 Claude 推出的 Skills 功能刷屏了技术圈。很多朋友问我：这玩意儿不就是 Tool Use 吗？换个马甲我就不认识了？&lt;/p&gt;
+&lt;p&gt;其实不然。如果说 Tools 是 Agent 的&amp;quot;手&amp;quot;，那么 Skills 更像是让 Agent 拥有了**&amp;ldquo;外挂大脑&amp;rdquo;**。今天这篇主要聊聊，为什么 Skills 是 Agent 走向复杂工程化的关键一步。&lt;/p&gt;
+&lt;h2 id="1-什么是-skills"&gt;1. 什么是 Skills？&lt;/h2&gt;
+&lt;p&gt;简单来说，Skills 是一种&lt;strong&gt;可动态加载&lt;/strong&gt;的&amp;quot;能力插件&amp;quot;或&amp;quot;知识包&amp;quot;。&lt;/p&gt;
+&lt;p&gt;形式上，它就是一个文件夹，里面整整齐齐地放着：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;指令 (Instructions)&lt;/strong&gt;: 比如 &lt;code&gt;SKILL.md&lt;/code&gt;，写满了私有化的 SOP（标准作业程序）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;脚本 (Scripts)&lt;/strong&gt;: Python 脚本等，用来执行确定性的操作。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;资源 (Resources)&lt;/strong&gt;: 其他辅助文件。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Agent 就像一个&amp;quot;乐高小人&amp;quot;，需要什么能力，就&amp;quot;咔嚓&amp;quot;一声把对应的 Skills 模块插上去。&lt;/p&gt;
+&lt;h2 id="2-为什么我们需要-skills"&gt;2. 为什么我们需要 Skills？&lt;/h2&gt;
+&lt;p&gt;在 Agent 开发中，我们苦&amp;quot;Context 爆炸&amp;quot;久矣。Skills 的出现，主要是为了解决从 Demo 到 Production 的两个核心痛点。&lt;/p&gt;
+&lt;h3 id="1-渐进式披露给大脑减负"&gt;1. 渐进式披露：给大脑&amp;quot;减负&amp;quot;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;没有 Skills 前&lt;/strong&gt;（单体应用模式）：
+我们需要把所有的业务逻辑、具体的 Prompt、几十个 Tool 的定义，全部一股脑塞进 System Prompt 里。这就好比让一个员工在入职第一天，就把公司几百页的规章制度倒背如流。结果就是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;贵&lt;/strong&gt;：Token 消耗巨大。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;笨&lt;/strong&gt;：上下文太长，模型注意力分散，极易产生幻觉。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;有了 Skills 后&lt;/strong&gt;（微服务模式）：
+Agent 采用了 &lt;strong&gt;&amp;ldquo;渐进式披露&amp;rdquo; (Progressive Disclosure)&lt;/strong&gt; 的策略。&lt;/p&gt;</description></item></channel></rss>
