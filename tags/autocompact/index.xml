@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>AutoCompact on 算法工程笔记</title><link>https://centurysee.github.io/tags/autocompact/</link><description>Recent content in AutoCompact on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.163.3</generator><language>zh-cn</language><lastBuildDate>Sun, 28 Jun 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/autocompact/index.xml" rel="self" type="application/rss+xml"/><item><title>Agent Harness 第五讲：上下文压缩 —— 长对话不爆 context 的三层防线</title><link>https://centurysee.github.io/posts/05-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8E%8B%E7%BC%A9/</link><pubDate>Sun, 28 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/05-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8E%8B%E7%BC%A9/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解 harness 如何在固定 context window 下应对只增不减的对话历史——一套按&amp;quot;代价/信息损失&amp;quot;递增的三层压缩防线。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-问题"&gt;0. 问题&lt;/h2&gt;
+&lt;p&gt;第一讲的循环每轮都往 &lt;code&gt;messages&lt;/code&gt; 追加（模型回复 + 工具结果），&lt;strong&gt;历史只增不减&lt;/strong&gt;。但 context window 固定（如 200k token），长会话——尤其工具结果（&lt;code&gt;Read&lt;/code&gt; 大文件、&lt;code&gt;Bash&lt;/code&gt; 大量输出）——很快撑爆。&lt;/p&gt;
+&lt;p&gt;解法是&lt;strong&gt;按&amp;quot;代价/损失&amp;quot;递增的三层防线&lt;/strong&gt;，对应 &lt;code&gt;query.ts&lt;/code&gt; 调用顺序（&lt;code&gt;:401 snip → :414 microcompact → :454 autocompact&lt;/code&gt;）：&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart LR
+A[&amp;#34;历史增长逼近上限&amp;#34;] --&amp;gt; B[&amp;#34;① snip 删整条不需要的消息&amp;#34;]
+B --&amp;gt; C[&amp;#34;② microcompact 挖空旧工具结果内容&amp;#34;]
+C --&amp;gt; D[&amp;#34;③ autocompact LLM总结全部历史&amp;#34;]
+B -.外科手术式移除.-&amp;gt; X[ ]
+C -.挖空一类内容.-&amp;gt; X
+D -.整段重写.-&amp;gt; X
+X[&amp;#34;破坏结构的激进程度 递增 →&amp;#34;]
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;&lt;strong&gt;设计哲学&lt;/strong&gt;：先用最便宜、最不破坏结构的手段，扛不住才升级。延续主线——省 token，但尽量少丢信息。&lt;/p&gt;
+&lt;h2 id="1-第一层-snip选择性删除整条消息模型可主动发起"&gt;1. 第一层 snip：选择性删除整条消息（模型可主动发起）&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;⚠️ snip 的实现本体 &lt;code&gt;snipCompact.js&lt;/code&gt; 不在泄露包里（被 &lt;code&gt;HISTORY_SNIP&lt;/code&gt; feature 门控的内部模块，&lt;code&gt;query.ts:116&lt;/code&gt; 是桩）。以下从调用点 + 散落注释还原。&lt;/p&gt;</description></item></channel></rss>

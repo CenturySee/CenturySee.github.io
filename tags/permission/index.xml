@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Permission on 算法工程笔记</title><link>https://centurysee.github.io/tags/permission/</link><description>Recent content in Permission on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.163.3</generator><language>zh-cn</language><lastBuildDate>Mon, 29 Jun 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/permission/index.xml" rel="self" type="application/rss+xml"/><item><title>Agent Harness 第六讲：权限系统 —— `canUseTool` 的两阶段决策机</title><link>https://centurysee.github.io/posts/06-%E6%9D%83%E9%99%90%E7%B3%BB%E7%BB%9F/</link><pubDate>Mon, 29 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/06-%E6%9D%83%E9%99%90%E7%B3%BB%E7%BB%9F/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：把第二讲 7 关管线的第④关「权限闸门」内部彻底展开，理解 allow/deny/ask 是如何被稳健、防御性地决定的。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-定位"&gt;0. 定位&lt;/h2&gt;
+&lt;p&gt;第二讲第④关 &lt;code&gt;canUseTool&lt;/code&gt;（&lt;code&gt;toolExecution.ts:921&lt;/code&gt;）的真身是 &lt;code&gt;permissions.ts:473&lt;/code&gt; 的 &lt;code&gt;hasPermissionsToUseTool&lt;/code&gt;。它的输出永远三选一：&lt;code&gt;{ behavior: 'allow' | 'deny' | 'ask' }&lt;/code&gt;。整个系统的复杂性都为了&lt;strong&gt;稳健地、防御性地&lt;/strong&gt;得出这三个字之一。&lt;/p&gt;
+&lt;h2 id="1-两阶段结构"&gt;1. 两阶段结构&lt;/h2&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart TB
+IN[&amp;#34;canUseTool(tool, input, ctx)&amp;#34;] --&amp;gt; P1[&amp;#34;阶段一: 规则管线&amp;lt;br/&amp;gt;hasPermissionsToUseToolInner&amp;#34;]
+P1 --&amp;gt; R{结果?}
+R --&amp;gt;|allow| A1[&amp;#34;✅ 直接执行&amp;#34;]
+R --&amp;gt;|deny| D1[&amp;#34;❌ 拒绝回灌&amp;#34;]
+R --&amp;gt;|ask| P2[&amp;#34;阶段二: 按 permission mode 变换这个 &amp;#39;ask&amp;#39;&amp;#34;]
+P2 --&amp;gt; M{mode?}
+M --&amp;gt;|default| ASK[&amp;#34;弹窗问用户&amp;#34;]
+M --&amp;gt;|dontAsk| D2[&amp;#34;ask→deny&amp;#34;]
+M --&amp;gt;|auto| CLS[&amp;#34;AI 分类器判定&amp;#34;]
+M --&amp;gt;|headless/async| HK[&amp;#34;PermissionRequest hook → 否则 auto-deny&amp;#34;]
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;&lt;strong&gt;关键认知：permission mode 不是替换规则管线，而是只对管线吐出的 &lt;code&gt;ask&lt;/code&gt; 做后处理。&lt;/strong&gt; 规则管线&lt;strong&gt;永远先跑&lt;/strong&gt;，得出 allow/deny/ask；mode 只决定&amp;quot;当结果是 ask 时怎么办&amp;quot;。这个分层是理解整个系统的钥匙。&lt;/p&gt;</description></item></channel></rss>

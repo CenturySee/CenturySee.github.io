@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Context on 算法工程笔记</title><link>https://centurysee.github.io/tags/context/</link><description>Recent content in Context on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.163.3</generator><language>zh-cn</language><lastBuildDate>Fri, 26 Jun 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/context/index.xml" rel="self" type="application/rss+xml"/><item><title>Agent Harness 第三讲：context 怎么拼 —— 模型每轮看到的完整画面</title><link>https://centurysee.github.io/posts/03-context%E6%8B%BC%E8%A3%85/</link><pubDate>Fri, 26 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/03-context%E6%8B%BC%E8%A3%85/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：把 &lt;code&gt;callModel({ messages, systemPrompt, tools })&lt;/code&gt; 三个参数彻底拆开，理解&amp;quot;模型每轮到底看到了什么&amp;quot;，以及为什么这么拼（答案：prompt 缓存经济学）。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-拼装点"&gt;0. 拼装点&lt;/h2&gt;
+&lt;p&gt;主循环 &lt;code&gt;query.ts:659&lt;/code&gt;，每轮请求就这一句：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#a6e22e"&gt;deps&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;callModel&lt;/span&gt;({
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;prependUserContext&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;messagesForQuery&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;userContext&lt;/span&gt;), &lt;span style="color:#75715e"&gt;// 对话历史 + 用户上下文
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;systemPrompt&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;fullSystemPrompt&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// 系统指令 + 系统上下文
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;tools&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;toolUseContext.options.tools&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// 工具定义
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;})
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;code&gt;fullSystemPrompt&lt;/code&gt;（&lt;code&gt;query.ts:449&lt;/code&gt;）= &lt;code&gt;appendSystemContext(systemPrompt, systemContext)&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;一次 API 请求 = &lt;strong&gt;三块拼装&lt;/strong&gt;，对应 Anthropic API 的 &lt;code&gt;{ system, messages, tools }&lt;/code&gt;。关键设计：同样是&amp;quot;上下文&amp;quot;，&lt;strong&gt;塞进 system（全局指令位）还是 messages（对话流位）取决于它是否会变&lt;/strong&gt;。&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart LR
+subgraph REQ[&amp;#34;一次 callModel 请求&amp;#34;]
+direction TB
+S[&amp;#34;system 槽&amp;#34;]
+M[&amp;#34;messages 槽&amp;#34;]
+T[&amp;#34;tools 槽&amp;#34;]
+end
+SP[&amp;#34;systemPrompt(大段静态指令)&amp;#34;] --&amp;gt; S
+SC[&amp;#34;systemContext = git status&amp;#34;] --&amp;gt;|appendSystemContext| S
+UC[&amp;#34;userContext = CLAUDE.md + 日期&amp;#34;] --&amp;gt;|&amp;#34;prependUserContext(包成 system-reminder)&amp;#34;| M
+H[&amp;#34;对话历史 messagesForQuery&amp;#34;] --&amp;gt; M
+AT[&amp;#34;attachments(文件变更/记忆/技能)&amp;#34;] --&amp;gt; M
+TD[&amp;#34;每个 Tool&amp;#34;] --&amp;gt;|&amp;#34;toolToAPISchema&amp;#34;| T
+&lt;/code&gt;&lt;/pre&gt;&lt;h2 id="1-system-槽静态指令--系统上下文"&gt;1. system 槽：静态指令 + 系统上下文&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;systemPrompt&lt;/code&gt;&lt;/strong&gt;：定义 Claude Code 人格和行为准则的大段指令，每轮基本不变。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;systemContext&lt;/code&gt;&lt;/strong&gt;（&lt;code&gt;context.ts:116&lt;/code&gt; &lt;code&gt;getSystemContext&lt;/code&gt;）：往 system 末尾追加，目前主要是 &lt;strong&gt;git status&lt;/strong&gt;（&lt;code&gt;context.ts:36&lt;/code&gt;）——分支、主分支、&lt;code&gt;git status --short&lt;/code&gt;、最近 5 条 commit。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;注意 &lt;code&gt;context.ts:97&lt;/code&gt; 写给模型的话：&amp;ldquo;This is the git status at the start of the conversation … will not update during the conversation.&amp;rdquo; 这句&lt;strong&gt;本身就是 prompt engineering&lt;/strong&gt;：git status 只在会话开始抓一次（&lt;code&gt;memoize&lt;/code&gt; 缓存），不说清模型会误以为是实时的。&lt;code&gt;appendSystemContext&lt;/code&gt;（&lt;code&gt;api.ts:437&lt;/code&gt;）把它按 &lt;code&gt;key: value&lt;/code&gt; 拼成 block 贴到 system 末尾。&lt;/p&gt;</description></item></channel></rss>

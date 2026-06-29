@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Harness on 算法工程笔记</title><link>https://centurysee.github.io/tags/harness/</link><description>Recent content in Harness on 算法工程笔记</description><image><title>算法工程笔记</title><url>https://centurysee.github.io/images/papermod-cover.png</url><link>https://centurysee.github.io/images/papermod-cover.png</link></image><generator>Hugo -- 0.163.3</generator><language>zh-cn</language><lastBuildDate>Mon, 29 Jun 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://centurysee.github.io/tags/harness/index.xml" rel="self" type="application/rss+xml"/><item><title>Agent Harness 第六讲：权限系统 —— `canUseTool` 的两阶段决策机</title><link>https://centurysee.github.io/posts/06-%E6%9D%83%E9%99%90%E7%B3%BB%E7%BB%9F/</link><pubDate>Mon, 29 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/06-%E6%9D%83%E9%99%90%E7%B3%BB%E7%BB%9F/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：把第二讲 7 关管线的第④关「权限闸门」内部彻底展开，理解 allow/deny/ask 是如何被稳健、防御性地决定的。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-定位"&gt;0. 定位&lt;/h2&gt;
+&lt;p&gt;第二讲第④关 &lt;code&gt;canUseTool&lt;/code&gt;（&lt;code&gt;toolExecution.ts:921&lt;/code&gt;）的真身是 &lt;code&gt;permissions.ts:473&lt;/code&gt; 的 &lt;code&gt;hasPermissionsToUseTool&lt;/code&gt;。它的输出永远三选一：&lt;code&gt;{ behavior: 'allow' | 'deny' | 'ask' }&lt;/code&gt;。整个系统的复杂性都为了&lt;strong&gt;稳健地、防御性地&lt;/strong&gt;得出这三个字之一。&lt;/p&gt;
+&lt;h2 id="1-两阶段结构"&gt;1. 两阶段结构&lt;/h2&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart TB
+IN[&amp;#34;canUseTool(tool, input, ctx)&amp;#34;] --&amp;gt; P1[&amp;#34;阶段一: 规则管线&amp;lt;br/&amp;gt;hasPermissionsToUseToolInner&amp;#34;]
+P1 --&amp;gt; R{结果?}
+R --&amp;gt;|allow| A1[&amp;#34;✅ 直接执行&amp;#34;]
+R --&amp;gt;|deny| D1[&amp;#34;❌ 拒绝回灌&amp;#34;]
+R --&amp;gt;|ask| P2[&amp;#34;阶段二: 按 permission mode 变换这个 &amp;#39;ask&amp;#39;&amp;#34;]
+P2 --&amp;gt; M{mode?}
+M --&amp;gt;|default| ASK[&amp;#34;弹窗问用户&amp;#34;]
+M --&amp;gt;|dontAsk| D2[&amp;#34;ask→deny&amp;#34;]
+M --&amp;gt;|auto| CLS[&amp;#34;AI 分类器判定&amp;#34;]
+M --&amp;gt;|headless/async| HK[&amp;#34;PermissionRequest hook → 否则 auto-deny&amp;#34;]
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;&lt;strong&gt;关键认知：permission mode 不是替换规则管线，而是只对管线吐出的 &lt;code&gt;ask&lt;/code&gt; 做后处理。&lt;/strong&gt; 规则管线&lt;strong&gt;永远先跑&lt;/strong&gt;，得出 allow/deny/ask；mode 只决定&amp;quot;当结果是 ask 时怎么办&amp;quot;。这个分层是理解整个系统的钥匙。&lt;/p&gt;</description></item><item><title>Agent Harness 第七讲：MCP 集成 —— 外部工具如何接进 harness</title><link>https://centurysee.github.io/posts/07-mcp%E9%9B%86%E6%88%90/</link><pubDate>Mon, 29 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/07-mcp%E9%9B%86%E6%88%90/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解外部（甚至远端、不可信）的工具如何被接入 harness，以及这背后&amp;quot;复用 Tool 抽象 + 不信任外部输入&amp;quot;的双重智慧。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-mcp-是什么"&gt;0. MCP 是什么&lt;/h2&gt;
+&lt;p&gt;MCP（Model Context Protocol）是开放标准，让外部服务器把&lt;strong&gt;工具/资源/提示&lt;/strong&gt;暴露给 LLM 应用。装一个 GitHub/Slack MCP server，Claude Code 就能调它们——无需把集成硬编码进自身。它是 agent 的&lt;strong&gt;可扩展性边界&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;核心问题：&lt;strong&gt;一个跑在别的进程/远端的工具，怎么变成 harness 能用的东西？&lt;/strong&gt;&lt;/p&gt;
+&lt;h2 id="1-核心戏法mcp-工具--一个普通的-tool-对象"&gt;1. 核心戏法：MCP 工具 = 一个普通的 &lt;code&gt;Tool&lt;/code&gt; 对象&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;client.ts:1766-1833&lt;/code&gt; 的 &lt;code&gt;fetchToolsForClient&lt;/code&gt; 向 server 发 &lt;code&gt;tools/list&lt;/code&gt; JSON-RPC，拿到清单，把每个映射成第二讲的 &lt;code&gt;Tool&lt;/code&gt;：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;toolsToProcess&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;map&lt;/span&gt;((&lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;)&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Tool&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;fullyQualifiedName&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;buildMcpToolName&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;client&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;name&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;name&lt;/span&gt;) &lt;span style="color:#75715e"&gt;// mcp__server__tool
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; ...&lt;span style="color:#a6e22e"&gt;MCPTool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;name&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;fullyQualifiedName&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;mcpInfo&lt;/span&gt;&lt;span style="color:#f92672"&gt;:&lt;/span&gt; { &lt;span style="color:#a6e22e"&gt;serverName&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;client.name&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;toolName&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;tool.name&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isMcp&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;inputJSONSchema&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;tool.inputSchema&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// 远端直接给 JSON Schema
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;async&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;description() {&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;description&lt;/span&gt; &lt;span style="color:#f92672"&gt;??&lt;/span&gt; &lt;span style="color:#e6db74"&gt;&amp;#39;&amp;#39;&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isConcurrencySafe() {&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;annotations&lt;/span&gt;&lt;span style="color:#f92672"&gt;?&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;readOnlyHint&lt;/span&gt; &lt;span style="color:#f92672"&gt;??&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;false&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isReadOnly&lt;/span&gt;() { &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;annotations&lt;/span&gt;&lt;span style="color:#f92672"&gt;?&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;readOnlyHint&lt;/span&gt; &lt;span style="color:#f92672"&gt;??&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;false&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isDestructive&lt;/span&gt;() { &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;tool&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;annotations&lt;/span&gt;&lt;span style="color:#f92672"&gt;?&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;destructiveHint&lt;/span&gt; &lt;span style="color:#f92672"&gt;??&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;false&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;async&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;checkPermissions() {&lt;/span&gt; &lt;span style="color:#75715e"&gt;/* passthrough → ask */&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;async&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;call&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;args&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;context&lt;/span&gt;, ...) { &lt;span style="color:#75715e"&gt;/* 通过 transport 发 tools/call JSON-RPC */&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;})
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;strong&gt;最深刻的一点&lt;/strong&gt;：MCP 工具被包装成 &lt;code&gt;Tool&lt;/code&gt; 后，&lt;strong&gt;和内置工具走完全相同的所有管线&lt;/strong&gt;：&lt;/p&gt;</description></item><item><title>Agent Harness 第五讲：上下文压缩 —— 长对话不爆 context 的三层防线</title><link>https://centurysee.github.io/posts/05-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8E%8B%E7%BC%A9/</link><pubDate>Sun, 28 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/05-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8E%8B%E7%BC%A9/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解 harness 如何在固定 context window 下应对只增不减的对话历史——一套按&amp;quot;代价/信息损失&amp;quot;递增的三层压缩防线。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-问题"&gt;0. 问题&lt;/h2&gt;
+&lt;p&gt;第一讲的循环每轮都往 &lt;code&gt;messages&lt;/code&gt; 追加（模型回复 + 工具结果），&lt;strong&gt;历史只增不减&lt;/strong&gt;。但 context window 固定（如 200k token），长会话——尤其工具结果（&lt;code&gt;Read&lt;/code&gt; 大文件、&lt;code&gt;Bash&lt;/code&gt; 大量输出）——很快撑爆。&lt;/p&gt;
+&lt;p&gt;解法是&lt;strong&gt;按&amp;quot;代价/损失&amp;quot;递增的三层防线&lt;/strong&gt;，对应 &lt;code&gt;query.ts&lt;/code&gt; 调用顺序（&lt;code&gt;:401 snip → :414 microcompact → :454 autocompact&lt;/code&gt;）：&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart LR
+A[&amp;#34;历史增长逼近上限&amp;#34;] --&amp;gt; B[&amp;#34;① snip 删整条不需要的消息&amp;#34;]
+B --&amp;gt; C[&amp;#34;② microcompact 挖空旧工具结果内容&amp;#34;]
+C --&amp;gt; D[&amp;#34;③ autocompact LLM总结全部历史&amp;#34;]
+B -.外科手术式移除.-&amp;gt; X[ ]
+C -.挖空一类内容.-&amp;gt; X
+D -.整段重写.-&amp;gt; X
+X[&amp;#34;破坏结构的激进程度 递增 →&amp;#34;]
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;&lt;strong&gt;设计哲学&lt;/strong&gt;：先用最便宜、最不破坏结构的手段，扛不住才升级。延续主线——省 token，但尽量少丢信息。&lt;/p&gt;
+&lt;h2 id="1-第一层-snip选择性删除整条消息模型可主动发起"&gt;1. 第一层 snip：选择性删除整条消息（模型可主动发起）&lt;/h2&gt;
+&lt;blockquote&gt;
+&lt;p&gt;⚠️ snip 的实现本体 &lt;code&gt;snipCompact.js&lt;/code&gt; 不在泄露包里（被 &lt;code&gt;HISTORY_SNIP&lt;/code&gt; feature 门控的内部模块，&lt;code&gt;query.ts:116&lt;/code&gt; 是桩）。以下从调用点 + 散落注释还原。&lt;/p&gt;</description></item><item><title>Agent Harness 第四讲：子 agent / 多 agent —— `AgentTool` + `runAgent`</title><link>https://centurysee.github.io/posts/04-%E5%AD%90agent/</link><pubDate>Sat, 27 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/04-%E5%AD%90agent/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解多 agent 架构的本质（query 的递归嵌套）、子 agent 的核心价值（context 隔离）与它内在的代价（信息瓶颈）。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-一句话戳破子-agent-就是再跑一遍主循环"&gt;0. 一句话戳破：子 agent 就是&amp;quot;再跑一遍主循环&amp;quot;&lt;/h2&gt;
+&lt;p&gt;看 &lt;code&gt;src/tools/AgentTool/runAgent.ts:748&lt;/code&gt;：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#66d9ef"&gt;for&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;await&lt;/span&gt; (&lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;message&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;of&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;query&lt;/span&gt;({ &lt;span style="color:#75715e"&gt;// ← 第一讲那个同一个 query()！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;initialMessages&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;systemPrompt&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;agentSystemPrompt&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;userContext&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;resolvedUserContext&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;systemContext&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;resolvedSystemContext&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;canUseTool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;toolUseContext&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;agentToolUseContext&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// ← 但是一个全新隔离的 context
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;querySource&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;maxTurns&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;maxTurns&lt;/span&gt; &lt;span style="color:#f92672"&gt;??&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;agentDefinition&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;maxTurns&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;}))
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;strong&gt;没有&amp;quot;子 agent 引擎&amp;quot;这种东西。&lt;/strong&gt; 一个子 agent = 用一套独立的 messages / systemPrompt / tools / agentId / abortController 再调一次第一讲那个主循环。整个系统是 &lt;code&gt;query()&lt;/code&gt; 的&lt;strong&gt;递归嵌套&lt;/strong&gt;：&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code&gt;主 query 循环
+└─(模型调 AgentTool)→ runAgent → query 循环 (子)
+└─(子模型又调 AgentTool)→ runAgent → query 循环 (孙)
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;你已经懂的那一套（循环、工具管线、context 拼装）原封不动套用到每一层 agent。&lt;/p&gt;
+&lt;h2 id="1-触发路径agenttool-是一个会生孩子的工具"&gt;1. 触发路径：AgentTool 是一个&amp;quot;会生孩子&amp;quot;的工具&lt;/h2&gt;
+&lt;p&gt;父 agent 调用名为 &lt;code&gt;Agent&lt;/code&gt; 的工具（&lt;code&gt;AgentTool.tsx&lt;/code&gt;），走第二讲一样的 7 关管线——只是它的 &lt;code&gt;call()&lt;/code&gt; 干的事是 spawn 子 agent：&lt;/p&gt;</description></item><item><title>Agent Harness 第三讲：context 怎么拼 —— 模型每轮看到的完整画面</title><link>https://centurysee.github.io/posts/03-context%E6%8B%BC%E8%A3%85/</link><pubDate>Fri, 26 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/03-context%E6%8B%BC%E8%A3%85/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：把 &lt;code&gt;callModel({ messages, systemPrompt, tools })&lt;/code&gt; 三个参数彻底拆开，理解&amp;quot;模型每轮到底看到了什么&amp;quot;，以及为什么这么拼（答案：prompt 缓存经济学）。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="0-拼装点"&gt;0. 拼装点&lt;/h2&gt;
+&lt;p&gt;主循环 &lt;code&gt;query.ts:659&lt;/code&gt;，每轮请求就这一句：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#a6e22e"&gt;deps&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;callModel&lt;/span&gt;({
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;prependUserContext&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;messagesForQuery&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;userContext&lt;/span&gt;), &lt;span style="color:#75715e"&gt;// 对话历史 + 用户上下文
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;systemPrompt&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;fullSystemPrompt&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// 系统指令 + 系统上下文
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;tools&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;toolUseContext.options.tools&lt;/span&gt;, &lt;span style="color:#75715e"&gt;// 工具定义
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;})
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;code&gt;fullSystemPrompt&lt;/code&gt;（&lt;code&gt;query.ts:449&lt;/code&gt;）= &lt;code&gt;appendSystemContext(systemPrompt, systemContext)&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;一次 API 请求 = &lt;strong&gt;三块拼装&lt;/strong&gt;，对应 Anthropic API 的 &lt;code&gt;{ system, messages, tools }&lt;/code&gt;。关键设计：同样是&amp;quot;上下文&amp;quot;，&lt;strong&gt;塞进 system（全局指令位）还是 messages（对话流位）取决于它是否会变&lt;/strong&gt;。&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code class="language-mermaid" data-lang="mermaid"&gt;flowchart LR
+subgraph REQ[&amp;#34;一次 callModel 请求&amp;#34;]
+direction TB
+S[&amp;#34;system 槽&amp;#34;]
+M[&amp;#34;messages 槽&amp;#34;]
+T[&amp;#34;tools 槽&amp;#34;]
+end
+SP[&amp;#34;systemPrompt(大段静态指令)&amp;#34;] --&amp;gt; S
+SC[&amp;#34;systemContext = git status&amp;#34;] --&amp;gt;|appendSystemContext| S
+UC[&amp;#34;userContext = CLAUDE.md + 日期&amp;#34;] --&amp;gt;|&amp;#34;prependUserContext(包成 system-reminder)&amp;#34;| M
+H[&amp;#34;对话历史 messagesForQuery&amp;#34;] --&amp;gt; M
+AT[&amp;#34;attachments(文件变更/记忆/技能)&amp;#34;] --&amp;gt; M
+TD[&amp;#34;每个 Tool&amp;#34;] --&amp;gt;|&amp;#34;toolToAPISchema&amp;#34;| T
+&lt;/code&gt;&lt;/pre&gt;&lt;h2 id="1-system-槽静态指令--系统上下文"&gt;1. system 槽：静态指令 + 系统上下文&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;systemPrompt&lt;/code&gt;&lt;/strong&gt;：定义 Claude Code 人格和行为准则的大段指令，每轮基本不变。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;systemContext&lt;/code&gt;&lt;/strong&gt;（&lt;code&gt;context.ts:116&lt;/code&gt; &lt;code&gt;getSystemContext&lt;/code&gt;）：往 system 末尾追加，目前主要是 &lt;strong&gt;git status&lt;/strong&gt;（&lt;code&gt;context.ts:36&lt;/code&gt;）——分支、主分支、&lt;code&gt;git status --short&lt;/code&gt;、最近 5 条 commit。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;注意 &lt;code&gt;context.ts:97&lt;/code&gt; 写给模型的话：&amp;ldquo;This is the git status at the start of the conversation … will not update during the conversation.&amp;rdquo; 这句&lt;strong&gt;本身就是 prompt engineering&lt;/strong&gt;：git status 只在会话开始抓一次（&lt;code&gt;memoize&lt;/code&gt; 缓存），不说清模型会误以为是实时的。&lt;code&gt;appendSystemContext&lt;/code&gt;（&lt;code&gt;api.ts:437&lt;/code&gt;）把它按 &lt;code&gt;key: value&lt;/code&gt; 拼成 block 贴到 system 末尾。&lt;/p&gt;</description></item><item><title>Agent Harness 第二讲：工具系统 —— 一个 `tool_use` 块如何变成真正的执行</title><link>https://centurysee.github.io/posts/02-%E5%B7%A5%E5%85%B7%E7%B3%BB%E7%BB%9F/</link><pubDate>Thu, 25 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/02-%E5%B7%A5%E5%85%B7%E7%B3%BB%E7%BB%9F/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解工具的契约、调度（并发/串行）、以及一次调用的完整权限管线。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;第一讲里被一笔带过的 &lt;code&gt;runTools(toolUseBlocks)&lt;/code&gt;，展开后是 harness 里最讲究的部分。分三层看。&lt;/p&gt;
+&lt;h2 id="1-一个-tool-的契约srctoolts362"&gt;1. 一个 Tool 的契约（&lt;code&gt;src/Tool.ts:362&lt;/code&gt;）&lt;/h2&gt;
+&lt;p&gt;模型眼里的&amp;quot;工具&amp;quot;只是 JSON schema + 名字 + 描述。但 harness 里一个 &lt;code&gt;Tool&lt;/code&gt; 是个有约 40 个方法的对象。&lt;strong&gt;真正核心的只有 5 个&lt;/strong&gt;，其余全是 UI 渲染和遥测：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#66d9ef"&gt;type&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Tool&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;name&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;string&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;inputSchema&lt;/span&gt;: &lt;span style="color:#66d9ef"&gt;ZodSchema&lt;/span&gt; &lt;span style="color:#75715e"&gt;// ① 给模型的参数契约，也用来在本地校验
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;description&lt;/span&gt;()&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Promise&lt;/span&gt;&amp;lt;&lt;span style="color:#f92672"&gt;string&lt;/span&gt;&amp;gt; &lt;span style="color:#75715e"&gt;// ② 给模型看的说明（动态生成）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;prompt&lt;/span&gt;()&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Promise&lt;/span&gt;&amp;lt;&lt;span style="color:#f92672"&gt;string&lt;/span&gt;&amp;gt; &lt;span style="color:#75715e"&gt;// ③ 注入到工具定义里的详细指引
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isConcurrencySafe&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;input&lt;/span&gt;)&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;bool&lt;/span&gt; &lt;span style="color:#75715e"&gt;// ④ 能不能和别的工具并行跑（决定调度）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;isReadOnly&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;input&lt;/span&gt;)&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;bool&lt;/span&gt; &lt;span style="color:#75715e"&gt;// 只读？
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;checkPermissions&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;input&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;ctx&lt;/span&gt;)&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Promise&lt;/span&gt;&amp;lt;&lt;span style="color:#f92672"&gt;PermissionResult&lt;/span&gt;&amp;gt; &lt;span style="color:#75715e"&gt;// ⑤ 权限判定
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;call&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;input&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;ctx&lt;/span&gt;, ...)&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;Promise&lt;/span&gt;&amp;lt;&lt;span style="color:#f92672"&gt;ToolResult&lt;/span&gt;&amp;gt; &lt;span style="color:#75715e"&gt;// ⑤ 真正执行
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// …其余 30+ 个 renderXxx / getActivityDescription 都是终端 UI 用的
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id="两个关键设计"&gt;两个关键设计&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;buildTool()&lt;/code&gt; + &lt;code&gt;TOOL_DEFAULTS&lt;/code&gt;（&lt;code&gt;Tool.ts:757&lt;/code&gt;）= fail-closed 默认值&lt;/strong&gt;。没声明的方法自动填安全默认：&lt;code&gt;isConcurrencySafe→false&lt;/code&gt;（假设不安全）、&lt;code&gt;isReadOnly→false&lt;/code&gt;（假设会写）、&lt;code&gt;isDestructive→false&lt;/code&gt;。&lt;strong&gt;默认值都往更保守那边倒&lt;/strong&gt;——安全系统的标准姿势：忘了声明就当危险处理。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;schema 既是给模型的契约，也是本地守门员&lt;/strong&gt;。同一个 &lt;code&gt;inputSchema&lt;/code&gt;：(a) 序列化成 JSON Schema 发给 API；(b) 模型返回参数后在 &lt;code&gt;toolExecution.ts:615&lt;/code&gt; 用 &lt;code&gt;safeParse&lt;/code&gt; 再校验一遍。注释很诚实（&lt;code&gt;:614&lt;/code&gt;）：&amp;ldquo;the model is not great at generating valid input&amp;rdquo;——永远不信任模型输出。&lt;/p&gt;</description></item><item><title>Agent Harness 第一讲：harness 的心脏 —— `query.ts` 主循环</title><link>https://centurysee.github.io/posts/01-%E4%B8%BB%E5%BE%AA%E7%8E%AF/</link><pubDate>Wed, 24 Jun 2026 00:00:00 +0000</pubDate><guid>https://centurysee.github.io/posts/01-%E4%B8%BB%E5%BE%AA%E7%8E%AF/</guid><description>&lt;blockquote&gt;
+&lt;p&gt;导读目标：理解 agent harness 的本质循环——什么时候继续、什么时候停。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="1-先看清骨架剥掉-90-的噪音"&gt;1. 先看清骨架（剥掉 90% 的噪音）&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;src/query.ts&lt;/code&gt;（约 1730 行）绝大部分是&lt;strong&gt;容错和优化&lt;/strong&gt;：自动压缩上下文（autocompact / microcompact / snip / collapse）、错误恢复（prompt-too-long、max-output-tokens、模型 fallback）、token 预算、工具调用摘要……&lt;/p&gt;
+&lt;p&gt;全部剥掉后，agent harness 的本质只有一个循环：&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#66d9ef"&gt;async&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;function&lt;/span&gt;&lt;span style="color:#f92672"&gt;*&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;query&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;params&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;let&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;params&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt; &lt;span style="color:#75715e"&gt;// 对话历史
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;while&lt;/span&gt; (&lt;span style="color:#66d9ef"&gt;true&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ① 调 LLM（流式），把模型吐出的每个 block 实时 yield 给 UI
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;assistantMessages&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; []
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;toolUseBlocks&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; []
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;let&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;needsFollowUp&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;for&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;await&lt;/span&gt; (&lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;message&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;of&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;callModel&lt;/span&gt;({ &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;systemPrompt&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;tools&lt;/span&gt; })) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;yield&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;message&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;if&lt;/span&gt; (&lt;span style="color:#a6e22e"&gt;message&lt;/span&gt; &lt;span style="color:#960050;background-color:#1e0010"&gt;里有&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;tool_use&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;toolUseBlocks&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;push&lt;/span&gt;(...)
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;needsFollowUp&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;true&lt;/span&gt; &lt;span style="color:#75715e"&gt;// ← 唯一的&amp;#34;要不要继续循环&amp;#34;信号
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ② 模型没要求调工具 → 这一轮对话结束，退出
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;if&lt;/span&gt; (&lt;span style="color:#f92672"&gt;!&lt;/span&gt;&lt;span style="color:#a6e22e"&gt;needsFollowUp&lt;/span&gt;) &lt;span style="color:#66d9ef"&gt;return&lt;/span&gt; { &lt;span style="color:#a6e22e"&gt;reason&lt;/span&gt;&lt;span style="color:#f92672"&gt;:&lt;/span&gt; &lt;span style="color:#e6db74"&gt;&amp;#39;completed&amp;#39;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ③ 执行所有工具调用，收集结果
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;toolResults&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; []
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;for&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;await&lt;/span&gt; (&lt;span style="color:#66d9ef"&gt;const&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;update&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;of&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;runTools&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;toolUseBlocks&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;canUseTool&lt;/span&gt;, &lt;span style="color:#a6e22e"&gt;ctx&lt;/span&gt;)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;yield&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;update&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;message&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;toolResults&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;push&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;update&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;message&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ④ 把 [历史 + 模型回复 + 工具结果] 拼成新历史，回到 ①
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt; &lt;span style="color:#f92672"&gt;=&lt;/span&gt; [...&lt;span style="color:#a6e22e"&gt;messages&lt;/span&gt;, ...&lt;span style="color:#a6e22e"&gt;assistantMessages&lt;/span&gt;, ...&lt;span style="color:#a6e22e"&gt;toolResults&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;strong&gt;整个 agent 就是这 4 步在转圈。&lt;/strong&gt; 任何 agent 框架（LangGraph、OpenAI Agents SDK、自研）骨架都是这个，Claude Code 只是把每一步做到了工业级。&lt;/p&gt;</description></item></channel></rss>
